@@ -67,11 +67,14 @@ jobs:
 
       - name: Install WebKit dependencies
         if: inputs.compile_webkit
-        # CentOS 7 splits the Perl modules used by the WebKit scripts into separate packages, so they are installed by name
+        # The Perl 5.16 of CentOS 7 is too old for the WebKit binding generators (List::Util has no uniq),
+        # so the Perl 5.30 software collection is used, which the Build step enables like the other collections.
+        # Its modules are split into separate packages, so the ones used by the WebKit scripts are installed by name.
         run: |
-          docker exec build yum install -y bison flex gperf perl python3 rh-ruby30-ruby \
-            'perl(Digest::MD5)' 'perl(JSON::PP)' 'perl(Time::HiRes)' 'perl(Term::ANSIColor)' 'perl(Getopt::Long)' \
-            'perl(File::Temp)' 'perl(FindBin)' 'perl(English)' 'perl(List::Util)' 'perl(Text::ParseWords)'
+          docker exec build yum install -y bison flex gperf python3 rh-ruby30-ruby \
+            rh-perl530 rh-perl530-perl rh-perl530-perl-Digest-MD5 rh-perl530-perl-JSON-PP rh-perl530-perl-Time-HiRes \
+            rh-perl530-perl-Term-ANSIColor rh-perl530-perl-Getopt-Long rh-perl530-perl-File-Temp \
+            rh-perl530-perl-Scalar-List-Utils rh-perl530-perl-Text-ParseWords
 
       # Built in the container so that it targets glibc 2.17. The target libraries are built with -fPIC,
       # so that libstdc++ and libgcc can be linked statically into the shared libraries like jfx does.
