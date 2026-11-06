@@ -46,7 +46,7 @@ jobs:
         run: |
           curl -sL https://www.cygwin.com/setup-x86_64.exe -o "$env:RUNNER_TEMP\cygwin-setup.exe"
           Start-Process -Wait -NoNewWindow -FilePath "$env:RUNNER_TEMP\cygwin-setup.exe" -ArgumentList `
-            "--quiet-mode --packages make,zip,unzip${{ inputs.compile_webkit && ',bison,flex,gperf,perl,python3,ruby' || '' }} --root C:\cygwin64 --local-package-dir $env:RUNNER_TEMP\cygwin-packages --site http://mirrors.kernel.org/sourceware/cygwin --no-desktop --no-shortcuts --no-startmenu --no-admin"
+            "--quiet-mode --packages make,zip,unzip${{ inputs.compile_media && ',makedepend' || '' }}${{ inputs.compile_webkit && ',bison,flex,gperf,perl,python3,ruby' || '' }} --root C:\cygwin64 --local-package-dir $env:RUNNER_TEMP\cygwin-packages --site http://mirrors.kernel.org/sourceware/cygwin --no-desktop --no-shortcuts --no-startmenu --no-admin"
           echo "C:\cygwin64\bin" >> $env:GITHUB_PATH
 
       # The jfx build only finds Visual Studio 2017-2022 by itself and expects the VS 2022 runtime (VC143),
