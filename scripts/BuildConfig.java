@@ -19,6 +19,8 @@ void main(String[] args) throws Exception {
     List<String> gradleProps = new ArrayList<>();
     gradleProps.add("-PHUDSON_JOB_NAME=jfx-openbuild");
     gradleProps.add("-PINCLUDE_APPS=false");
+    // INCLUDE_APPS only exists since jfx 28, older versions still build the apps with Ant unless their task is excluded
+    gradleProps.add("-x appsjar");
     if (compileMedia) {
         gradleProps.add("-PBUILD_LIBAV_STUBS=true");
     }

@@ -54,7 +54,11 @@ jobs:
 
       - name: Install WebKit dependencies
         if: inputs.compile_webkit
-        run: docker exec build yum install -y bison flex gperf perl perl-JSON-PP python3 rh-ruby30-ruby
+        # CentOS 7 splits the Perl modules used by the WebKit scripts into separate packages, so they are installed by name
+        run: |
+          docker exec build yum install -y bison flex gperf perl python3 rh-ruby30-ruby \
+            'perl(Digest::MD5)' 'perl(JSON::PP)' 'perl(Time::HiRes)' 'perl(Term::ANSIColor)' 'perl(Getopt::Long)' \
+            'perl(File::Temp)' 'perl(FindBin)' 'perl(English)' 'perl(List::Util)' 'perl(Text::ParseWords)'
 
       - name: Build
         run: |
