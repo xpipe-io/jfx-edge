@@ -24,6 +24,8 @@ jobs:
     env:
       GRADLE_PROPS: ${{ inputs.gradle_props }}
       TEST_ARGS: ${{ inputs.test_args }}
+      # WebKit would use the ccache of Strawberry Perl, which rejects the Cygwin style CCACHE_BASEDIR set by build-webkit
+      WK_USE_CCACHE: "NO"
       AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}

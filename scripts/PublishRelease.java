@@ -49,8 +49,8 @@ void main(String[] args) throws Exception {
 
     String version = names.stream().filter(n -> n.endsWith("_bin-sdk.zip")).findFirst().orElseThrow()
             .replaceFirst("^openjfx-", "").replaceFirst("_.*$", "");
-    String mavenVersion = names.stream().filter(n -> n.matches("javafx-[0-9].*\\.pom")).findFirst().orElseThrow()
-            .replaceFirst("^javafx-", "").replaceFirst("\\.pom$", "");
+    // Like PrepareMaven, which publishes the Maven files with this version
+    String mavenVersion = config.snapshot() ? version + "-SNAPSHOT" : version;
 
     String tag = version;
     if (snapshot) {
@@ -77,9 +77,11 @@ void main(String[] args) throws Exception {
                     link("Maven jars", tag, release.resolve(prefix + "-maven.zip"))));
         }
     }
-    notes.add("");
-    notes.add("The Maven artifacts of version `%s` are attached as individual files, e.g. `javafx-graphics-<version>-linux.jar`."
-            .formatted(mavenVersion));
+    // The individual Maven files are not attached, as their hundreds of uploads exceed the rate limits of GitHub
+    if (!config.mavenRepository().isEmpty()) {
+        notes.add("");
+        notes.add("The Maven artifacts of version `%s` are published to %s.".formatted(mavenVersion, config.mavenRepository()));
+    }
     notes.add("");
     notes.add("### Configuration");
     notes.add("");

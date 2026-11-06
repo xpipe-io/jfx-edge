@@ -24,6 +24,8 @@ jobs:
     env:
       GRADLE_PROPS: ${{ inputs.gradle_props }}
       TEST_ARGS: ${{ inputs.test_args }}
+      # WebKit requires GCC 12.2+, but CentOS 7 only has up to devtoolset-11 (x86_64) or devtoolset-10 (aarch64)
+      GCC_VERSION: 12.5.0
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -37,13 +39,24 @@ jobs:
           distribution: ${{ inputs.boot_jdk_distribution }}
           java-version: ${{ inputs.boot_jdk_version }}
 
+      - name: Restore GCC
+        id: gcc-cache
+        if: inputs.compile_webkit
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gcc
+          key: gcc-${{ env.GCC_VERSION }}-manylinux2014-${{ matrix.arch }}-v1
+
       # The native code is compiled in a manylinux2014 container (CentOS 7, glibc 2.17),
       # so that the libraries also run on old distributions
       - name: Start build container
         run: |
+          mkdir -p "$RUNNER_TEMP/gcc" "$RUNNER_TEMP/gcc-src"
           docker run -d --name build -w /work \
             -v "$PWD/jfx:/work" \
             -v "$JAVA_HOME:/opt/jdk:ro" -e JAVA_HOME=/opt/jdk \
+            -v "$RUNNER_TEMP/gcc:/opt/gcc" \
+            -v "$RUNNER_TEMP/gcc-src:/opt/gcc-src" \
             quay.io/pypa/manylinux2014_${{ matrix.arch == 'aarch64' && 'aarch64' || 'x86_64' }} \
             sleep infinity
           docker exec build yum install -y mesa-libGL-devel libX11-devel libXxf86vm-devel pkgconfig gtk3-devel libXtst-devel
@@ -60,6 +73,31 @@ jobs:
             'perl(Digest::MD5)' 'perl(JSON::PP)' 'perl(Time::HiRes)' 'perl(Term::ANSIColor)' 'perl(Getopt::Long)' \
             'perl(File::Temp)' 'perl(FindBin)' 'perl(English)' 'perl(List::Util)' 'perl(Text::ParseWords)'
 
+      # Built in the container so that it targets glibc 2.17. The target libraries are built with -fPIC,
+      # so that libstdc++ and libgcc can be linked statically into the shared libraries like jfx does.
+      # The sources are downloaded on the host, as the container lacks wget for download_prerequisites.
+      - name: Build GCC
+        if: inputs.compile_webkit && steps.gcc-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL "https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION.tar.xz" | tar xJ -C "$RUNNER_TEMP/gcc-src" --strip-components=1
+          (cd "$RUNNER_TEMP/gcc-src" && ./contrib/download_prerequisites)
+          docker exec build bash -ec '
+            for enable in /opt/rh/*/enable; do source "$enable"; done
+            mkdir -p /tmp/gcc-build && cd /tmp/gcc-build
+            /opt/gcc-src/configure --prefix=/opt/gcc --enable-languages=c,c++ --disable-multilib --disable-bootstrap \
+              --disable-libsanitizer --disable-nls CFLAGS_FOR_TARGET="-O2 -fPIC" CXXFLAGS_FOR_TARGET="-O2 -fPIC"
+            make -j$(nproc)
+            make install-strip
+          '
+
+      # Saved right away, so that it is not built again if the build fails
+      - name: Save GCC
+        if: inputs.compile_webkit && steps.gcc-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gcc
+          key: gcc-${{ env.GCC_VERSION }}-manylinux2014-${{ matrix.arch }}-v1
+
       - name: Build
         run: |
           docker exec -e GRADLE_PROPS build bash -ec '
@@ -67,6 +105,10 @@ jobs:
             export PATH="$JAVA_HOME/bin:$PATH"
             # The JDK of the runner image may link its cacerts to a store of the host that is missing in the container
             export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=/etc/pki/java/cacerts"
+            # The newer GCC for WebKit, whose libraries then link the C++ runtime statically like the other jfx libraries
+            if [ -x /opt/gcc/bin/gcc ]; then
+              export PATH="/opt/gcc/bin:$PATH" LDFLAGS="-static-libstdc++ -static-libgcc"
+            fi
             bash gradlew --info -PCONF=Release -PMAVEN_PUBLISH=true $GRADLE_PROPS -Dmaven.repo.local=/work/maven-repo all jmods publishToMavenLocal
           '
 
@@ -80,6 +122,10 @@ jobs:
             export PATH="$JAVA_HOME/bin:$PATH"
             # The JDK of the runner image may link its cacerts to a store of the host that is missing in the container
             export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=/etc/pki/java/cacerts"
+            # The newer GCC for WebKit, whose libraries then link the C++ runtime statically like the other jfx libraries
+            if [ -x /opt/gcc/bin/gcc ]; then
+              export PATH="/opt/gcc/bin:$PATH" LDFLAGS="-static-libstdc++ -static-libgcc"
+            fi
             bash gradlew --info --continue -PCONF=Release -PTEST_ONLY=true $GRADLE_PROPS $TEST_ARGS
           '
 

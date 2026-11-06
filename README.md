@@ -224,10 +224,9 @@ named like them (`<platform>` is one of `linux-x64`, `linux-aarch64`, `osx-x64`,
 - `openjfx-<version>_<platform>_bin-maven.zip` - the platform jars of the Maven publication, e.g. `javafx.graphics-linux-aarch64.jar`,
   using the same classifiers as Maven Central
 
-Additionally, it contains the javadoc of all modules as `openjfx-<version>-javadoc.zip`, and every file of the
-Maven publication individually, named like in a Maven repository, e.g. `javafx-graphics-28-nightly+14-SNAPSHOT-linux.jar`.
-As the release tag is the Maven version, a Maven repository can redirect a request for
-`org/openjfx/<artifact>/<version>/<file>` to the release asset `<version>/<file>`.
+Additionally, it contains the javadoc of all modules as `openjfx-<version>-javadoc.zip`.
+The individual files of the Maven publication are not attached, as their hundreds of uploads would exceed
+the rate limits of GitHub. They are published to the Maven repository of the configuration, if it has one.
 
 The version is `<version>-<configuration>+<build>`, e.g. `28-nightly+14`, so it can not be confused with an official one,
 and every configuration has its own versions. The build number is the one of the closest jfx tag of the base (`28+14`).
