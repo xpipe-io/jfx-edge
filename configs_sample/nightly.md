@@ -64,5 +64,5 @@ skip
 The Maven artifacts are published to:
 
 <!-- MAVEN-REPOSITORY-START -->
-https://maven.pkg.github.com/xpipe-io/openjfx-build
+https://maven.pkg.github.com/xpipe-io/jfx-openbuild
 <!-- MAVEN-REPOSITORY-END -->

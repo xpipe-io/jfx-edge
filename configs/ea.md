@@ -60,8 +60,5 @@ The following tests are run:
 skip
 <!-- TESTS-END -->
 
-The Maven artifacts are published to:
-
 <!-- MAVEN-REPOSITORY-START -->
-https://maven.pkg.github.com/xpipe-io/openjfx-build
 <!-- MAVEN-REPOSITORY-END -->

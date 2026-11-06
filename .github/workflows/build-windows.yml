@@ -64,14 +64,20 @@ jobs:
 
       - name: Build
         working-directory: jfx
-        run: .\gradlew.bat --info -PCHMOD_ARTIFACTS=false -PCONF=Release -PMAVEN_PUBLISH=true ($env:SIGN_PROPS -split ' ' -ne '') ($env:GRADLE_PROPS -split ' ') "-Dmaven.repo.local=$PWD\maven-repo" all jmods publishToMavenLocal
+        run: |
+          # Gradle adds the PATH of jfx next to the inherited Path instead of replacing it, so make and the media
+          # and WebKit builds would see the Path of the runner without the MSVC tools. A single PATH avoids that.
+          $p = $env:Path; Remove-Item Env:Path; $env:PATH = $p
+          .\gradlew.bat --info -PCHMOD_ARTIFACTS=false -PCONF=Release -PMAVEN_PUBLISH=true ($env:SIGN_PROPS -split ' ' -ne '') ($env:GRADLE_PROPS -split ' ') "-Dmaven.repo.local=$PWD\maven-repo" all jmods publishToMavenLocal
 
       - name: Test
         id: tests
         if: inputs.test_args != ''
         continue-on-error: true
         working-directory: jfx
-        run: .\gradlew.bat --info --continue -PCONF=Release -PTEST_ONLY=true ($env:GRADLE_PROPS -split ' ') ($env:TEST_ARGS -split ' ')
+        run: |
+          $p = $env:Path; Remove-Item Env:Path; $env:PATH = $p
+          .\gradlew.bat --info --continue -PCONF=Release -PTEST_ONLY=true ($env:GRADLE_PROPS -split ' ') ($env:TEST_ARGS -split ' ')
 
       - name: Stop Gradle daemon
         if: always()

@@ -61,6 +61,8 @@ jobs:
           docker exec -e GRADLE_PROPS build bash -ec '
             for enable in /opt/rh/*/enable; do source "$enable"; done
             export PATH="$JAVA_HOME/bin:$PATH"
+            # The JDK of the runner image may link its cacerts to a store of the host that is missing in the container
+            export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=/etc/pki/java/cacerts"
             bash gradlew --info -PCONF=Release -PMAVEN_PUBLISH=true $GRADLE_PROPS -Dmaven.repo.local=/work/maven-repo all jmods publishToMavenLocal
           '
 
@@ -72,6 +74,8 @@ jobs:
           docker exec -e GRADLE_PROPS -e TEST_ARGS build bash -ec '
             for enable in /opt/rh/*/enable; do source "$enable"; done
             export PATH="$JAVA_HOME/bin:$PATH"
+            # The JDK of the runner image may link its cacerts to a store of the host that is missing in the container
+            export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=/etc/pki/java/cacerts"
             bash gradlew --info --continue -PCONF=Release -PTEST_ONLY=true $GRADLE_PROPS $TEST_ARGS
           '
 
