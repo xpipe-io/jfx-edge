@@ -1,0 +1,220 @@
+name: build-config
+run-name: ${{ inputs.config }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      config: { type: string, required: true }
+      runners: { type: string, required: true }
+      boot_jdk_distribution: { type: string, required: true }
+      boot_jdk_version: { type: string, required: true }
+      force: { type: boolean, default: false }
+
+concurrency:
+  group: build-config-${{ inputs.config }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check for changes
+    runs-on: ${{ fromJSON(inputs.runners).default }}
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: ${{ inputs.boot_jdk_distribution }}
+          java-version: ${{ inputs.boot_jdk_version }}
+
+      - name: Compare with the latest release of the configuration
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: java scripts/CheckChanges.java "configs/${{ inputs.config }}.md" ${{ inputs.force }} >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-build-state
+          path: build-state.txt
+
+  merge:
+    name: Merge
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ${{ fromJSON(inputs.runners).default }}
+    outputs:
+      gradle_props: ${{ steps.config.outputs.gradle_props }}
+      test_args: ${{ steps.config.outputs.test_args }}
+      compile_webkit: ${{ steps.config.outputs.compile_webkit }}
+      compile_media: ${{ steps.config.outputs.compile_media }}
+      maven_repository: ${{ steps.config.outputs.maven_repository }}
+      snapshot: ${{ steps.config.outputs.snapshot }}
+      linux_archs: ${{ steps.config.outputs.linux_archs }}
+      macos_archs: ${{ steps.config.outputs.macos_archs }}
+      windows_archs: ${{ steps.config.outputs.windows_archs }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: ${{ inputs.boot_jdk_distribution }}
+          java-version: ${{ inputs.boot_jdk_version }}
+
+      - name: Merge the merge list into the base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          java scripts/MergePrs.java "configs/${{ inputs.config }}.md" jfx-src merge-report.md
+          cat merge-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Determine the build configuration
+        id: config
+        run: java scripts/BuildConfig.java "configs/${{ inputs.config }}.md" jfx-src >> "$GITHUB_OUTPUT"
+
+      - name: Remove git metadata from the merged source
+        run: rm -rf jfx-src/.git
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-jfx-src
+          path: jfx-src
+          retention-days: 1
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-merge-report
+          path: merge-report.md
+
+  build-linux:
+    name: Linux
+    needs: merge
+    if: needs.merge.outputs.linux_archs != '[]'
+    uses: ./.github/workflows/build-linux.yml
+    with:
+      config: ${{ inputs.config }}
+      runners: ${{ inputs.runners }}
+      boot_jdk_distribution: ${{ inputs.boot_jdk_distribution }}
+      boot_jdk_version: ${{ inputs.boot_jdk_version }}
+      archs: ${{ needs.merge.outputs.linux_archs }}
+      gradle_props: ${{ needs.merge.outputs.gradle_props }}
+      test_args: ${{ needs.merge.outputs.test_args }}
+      compile_webkit: ${{ needs.merge.outputs.compile_webkit == 'true' }}
+      compile_media: ${{ needs.merge.outputs.compile_media == 'true' }}
+
+  build-macos:
+    name: macOS
+    needs: merge
+    if: needs.merge.outputs.macos_archs != '[]'
+    uses: ./.github/workflows/build-macos.yml
+    with:
+      config: ${{ inputs.config }}
+      runners: ${{ inputs.runners }}
+      boot_jdk_distribution: ${{ inputs.boot_jdk_distribution }}
+      boot_jdk_version: ${{ inputs.boot_jdk_version }}
+      archs: ${{ needs.merge.outputs.macos_archs }}
+      gradle_props: ${{ needs.merge.outputs.gradle_props }}
+      test_args: ${{ needs.merge.outputs.test_args }}
+      compile_webkit: ${{ needs.merge.outputs.compile_webkit == 'true' }}
+      compile_media: ${{ needs.merge.outputs.compile_media == 'true' }}
+    secrets: inherit
+
+  build-windows:
+    name: Windows
+    needs: merge
+    if: needs.merge.outputs.windows_archs != '[]'
+    uses: ./.github/workflows/build-windows.yml
+    with:
+      config: ${{ inputs.config }}
+      runners: ${{ inputs.runners }}
+      boot_jdk_distribution: ${{ inputs.boot_jdk_distribution }}
+      boot_jdk_version: ${{ inputs.boot_jdk_version }}
+      archs: ${{ needs.merge.outputs.windows_archs }}
+      gradle_props: ${{ needs.merge.outputs.gradle_props }}
+      test_args: ${{ needs.merge.outputs.test_args }}
+      compile_webkit: ${{ needs.merge.outputs.compile_webkit == 'true' }}
+      compile_media: ${{ needs.merge.outputs.compile_media == 'true' }}
+    secrets: inherit
+
+  # Builds of an OS without selected platforms are skipped, which should not prevent publishing
+  maven:
+    name: Maven artifacts
+    needs: [merge, build-linux, build-macos, build-windows]
+    if: ${{ !cancelled() && needs.merge.result == 'success' && !contains(needs.*.result, 'failure') }}
+    runs-on: ${{ fromJSON(inputs.runners).default }}
+    env:
+      GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+      GPG_KEY: ${{ secrets.GPG_KEY }}
+      GPG_KEY_PASSWORD: ${{ secrets.GPG_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: ${{ inputs.boot_jdk_distribution }}
+          java-version: ${{ inputs.boot_jdk_version }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ${{ inputs.config }}-maven-*
+          path: maven-artifacts
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ${{ inputs.config }}-release-*
+          path: release-artifacts
+
+      - name: Merge the artifacts of all platforms
+        run: |
+          java scripts/MergeArtifacts.java maven-artifacts maven-repo
+          java scripts/MergeArtifacts.java release-artifacts release
+
+      - run: java scripts/PrepareMaven.java "configs/${{ inputs.config }}.md" maven-repo release maven-files
+
+      - name: Sign with GPG
+        if: env.GPG_KEY != ''
+        run: |
+          echo "$GPG_KEY" | gpg --batch --import
+          for file in maven-files/*; do
+            gpg --batch --pinentry-mode loopback --passphrase "$GPG_KEY_PASSWORD" --local-user "$GPG_KEY_ID" --armor --detach-sign "$file"
+          done
+
+      - name: Create checksums
+        run: java scripts/Checksums.java maven-files
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-maven
+          path: maven-files
+
+  publish-release:
+    name: Publish
+    needs: [merge, maven]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      config: ${{ inputs.config }}
+      runners: ${{ inputs.runners }}
+      boot_jdk_distribution: ${{ inputs.boot_jdk_distribution }}
+      boot_jdk_version: ${{ inputs.boot_jdk_version }}
+      snapshot: ${{ needs.merge.outputs.snapshot == 'true' }}
+
+  publish-maven:
+    name: Publish
+    needs: [merge, maven]
+    if: needs.merge.outputs.maven_repository != ''
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-maven.yml
+    with:
+      config: ${{ inputs.config }}
+      runners: ${{ inputs.runners }}
+      boot_jdk_distribution: ${{ inputs.boot_jdk_distribution }}
+      boot_jdk_version: ${{ inputs.boot_jdk_version }}
+    secrets: inherit

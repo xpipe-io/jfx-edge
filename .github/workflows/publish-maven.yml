@@ -1,0 +1,43 @@
+name: publish-maven
+
+on:
+  workflow_call:
+    inputs:
+      config: { type: string, required: true }
+      runners: { type: string, required: true }
+      boot_jdk_distribution: { type: string, required: true }
+      boot_jdk_version: { type: string, required: true }
+
+jobs:
+  maven:
+    name: Maven artifacts
+    runs-on: ${{ fromJSON(inputs.runners).default }}
+    env:
+      GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+      GPG_KEY: ${{ secrets.GPG_KEY }}
+      GPG_KEY_PASSWORD: ${{ secrets.GPG_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: ${{ inputs.boot_jdk_distribution }}
+          java-version: ${{ inputs.boot_jdk_version }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.config }}-maven
+          path: maven-files
+
+      - name: Import GPG key
+        if: env.GPG_KEY != ''
+        run: echo "$GPG_KEY" | gpg --batch --import
+
+      - name: Deploy
+        env:
+          # Without these secrets, the workflow token can publish to the GitHub Packages of this repository
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME || github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD || github.token }}
+          # setup-java sets -ntp, which hides the uploaded files
+          MAVEN_ARGS: ""
+        run: java scripts/DeployMaven.java "configs/${{ inputs.config }}.md" maven-files

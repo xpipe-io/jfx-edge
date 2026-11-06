@@ -1,0 +1,55 @@
+name: publish-release
+
+on:
+  workflow_call:
+    inputs:
+      config: { type: string, required: true }
+      runners: { type: string, required: true }
+      boot_jdk_distribution: { type: string, required: true }
+      boot_jdk_version: { type: string, required: true }
+      snapshot: { type: boolean, required: true }
+
+jobs:
+  release:
+    name: GitHub release
+    runs-on: ${{ fromJSON(inputs.runners).default }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: ${{ inputs.boot_jdk_distribution }}
+          java-version: ${{ inputs.boot_jdk_version }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ${{ inputs.config }}-release-*
+          path: release-artifacts
+
+      - name: Merge the artifacts of all platforms
+        run: java scripts/MergeArtifacts.java release-artifacts release
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ${{ inputs.config }}-tests-*
+          path: tests
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.config }}-merge-report
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.config }}-build-state
+          path: release
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.config }}-maven
+          path: release
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: java scripts/PublishRelease.java "configs/${{ inputs.config }}.md" ${{ inputs.snapshot }}

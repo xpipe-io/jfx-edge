@@ -1,0 +1,107 @@
+name: build-windows
+
+on:
+  workflow_call:
+    inputs:
+      config: { type: string, required: true }
+      runners: { type: string, required: true }
+      boot_jdk_distribution: { type: string, required: true }
+      boot_jdk_version: { type: string, required: true }
+      archs: { type: string, required: true }
+      gradle_props: { type: string, required: true }
+      test_args: { type: string, default: "" }
+      compile_webkit: { type: boolean, default: false }
+      compile_media: { type: boolean, default: false }
+
+jobs:
+  build:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(inputs.archs) }}
+    runs-on: ${{ fromJSON(inputs.runners)[format('windows-{0}', matrix.arch)] }}
+    env:
+      GRADLE_PROPS: ${{ inputs.gradle_props }}
+      TEST_ARGS: ${{ inputs.test_args }}
+      AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.config }}-jfx-src
+          path: jfx
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: ${{ inputs.boot_jdk_distribution }}
+          java-version: ${{ inputs.boot_jdk_version }}
+
+      - name: Install Cygwin
+        run: |
+          curl -sL https://www.cygwin.com/setup-x86_64.exe -o "$env:RUNNER_TEMP\cygwin-setup.exe"
+          Start-Process -Wait -NoNewWindow -FilePath "$env:RUNNER_TEMP\cygwin-setup.exe" -ArgumentList `
+            "--quiet-mode --packages make,zip,unzip${{ inputs.compile_webkit && ',bison,flex,gperf,perl,python3,ruby' || '' }} --root C:\cygwin64 --local-package-dir $env:RUNNER_TEMP\cygwin-packages --site http://mirrors.kernel.org/sourceware/cygwin --no-desktop --no-shortcuts --no-startmenu --no-admin"
+          echo "C:\cygwin64\bin" >> $env:GITHUB_PATH
+
+      # The jfx build only finds Visual Studio 2017-2022 by itself and expects the VS 2022 runtime (VC143),
+      # otherwise it leaves the MSVC runtime DLLs out of the artifacts
+      - name: Locate Visual Studio
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $redistVersion = (Get-Content "$vs\VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt" -TotalCount 1).Trim()
+          $crt = (Get-Item "$vs\VC\Redist\MSVC\$redistVersion\x64\Microsoft.VC*.CRT").Name
+          echo "VSCOMNTOOLS=$vs\VC\Auxiliary\Build" >> $env:GITHUB_ENV
+          echo "WINDOWS_CRT_VER=$($crt -replace '\D', '')" >> $env:GITHUB_ENV
+
+      - name: Set up code signing
+        run: scripts\windows\setup_sign.ps1
+
+      - name: Build
+        working-directory: jfx
+        run: .\gradlew.bat --info -PCHMOD_ARTIFACTS=false -PCONF=Release -PMAVEN_PUBLISH=true ($env:SIGN_PROPS -split ' ' -ne '') ($env:GRADLE_PROPS -split ' ') "-Dmaven.repo.local=$PWD\maven-repo" all jmods publishToMavenLocal
+
+      - name: Test
+        id: tests
+        if: inputs.test_args != ''
+        continue-on-error: true
+        working-directory: jfx
+        run: .\gradlew.bat --info --continue -PCONF=Release -PTEST_ONLY=true ($env:GRADLE_PROPS -split ' ') ($env:TEST_ARGS -split ' ')
+
+      - name: Stop Gradle daemon
+        if: always()
+        working-directory: jfx
+        run: .\gradlew.bat --stop
+
+      - name: Package
+        run: java scripts/Package.java windows-${{ matrix.arch }}
+
+      - run: Set-Content outcome.txt "${{ steps.tests.outcome }}"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-release-windows-${{ matrix.arch }}
+          path: release
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-maven-windows-${{ matrix.arch }}
+          path: maven-repo
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-tests-windows-${{ matrix.arch }}
+          path: outcome.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.test_args != ''
+        with:
+          name: ${{ inputs.config }}-test-results-windows-${{ matrix.arch }}
+          path: |
+            jfx/**/build/test-results/**
+            jfx/**/build/reports/tests/**

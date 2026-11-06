@@ -1,0 +1,35 @@
+name: jfx-openbuild
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: jfx-openbuild
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    name: Start a build for every configuration
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "26"
+
+      # A manual run rebuilds the snapshot configurations even without changes
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: java scripts/StartBuilds.java ${{ github.event_name == 'workflow_dispatch' }}

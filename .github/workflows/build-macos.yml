@@ -1,0 +1,97 @@
+name: build-macos
+
+on:
+  workflow_call:
+    inputs:
+      config: { type: string, required: true }
+      runners: { type: string, required: true }
+      boot_jdk_distribution: { type: string, required: true }
+      boot_jdk_version: { type: string, required: true }
+      archs: { type: string, required: true }
+      gradle_props: { type: string, required: true }
+      test_args: { type: string, default: "" }
+      compile_webkit: { type: boolean, default: false }
+      compile_media: { type: boolean, default: false }
+
+jobs:
+  build:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(inputs.archs) }}
+    runs-on: ${{ fromJSON(inputs.runners)[format('macos-{0}', matrix.arch)] }}
+    env:
+      GRADLE_PROPS: ${{ inputs.gradle_props }}
+      TEST_ARGS: ${{ inputs.test_args }}
+      MACOS_DEVELOPER_ID_APPLICATION_CERTIFICATE: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION_CERTIFICATE }}
+      MACOS_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+      MACOS_DEVELOPER_ID_APPLICATION_CERTIFICATE_NAME: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION_CERTIFICATE_NAME }}
+      MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+      MACOS_NOTARIZATION_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_APP_SPECIFIC_PASSWORD }}
+      MACOS_NOTARIZATION_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.config }}-jfx-src
+          path: jfx
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: ${{ inputs.boot_jdk_distribution }}
+          java-version: ${{ inputs.boot_jdk_version }}
+
+      # The oldest Xcode on the runner, closest to the Xcode used for the official builds
+      - run: sudo xcode-select --switch /Applications/Xcode_26.0.1.app/Contents/Developer
+
+      - name: Set up code signing
+        run: bash scripts/macos/setup_sign.sh
+
+      - name: Build
+        working-directory: jfx
+        run: bash gradlew --info -PCONF=Release -PMAVEN_PUBLISH=true $SIGN_PROPS $GRADLE_PROPS -Dmaven.repo.local=$PWD/maven-repo all jmods publishToMavenLocal
+
+      - name: Notarize
+        run: bash scripts/macos/notarize.sh jfx
+
+      - name: Test
+        id: tests
+        if: inputs.test_args != ''
+        continue-on-error: true
+        working-directory: jfx
+        run: bash gradlew --info --continue -PCONF=Release -PTEST_ONLY=true $GRADLE_PROPS $TEST_ARGS
+
+      - name: Stop Gradle daemon
+        if: always()
+        working-directory: jfx
+        run: bash gradlew --stop
+
+      - name: Package
+        run: java scripts/Package.java macos-${{ matrix.arch }}
+
+      - run: echo "${{ steps.tests.outcome }}" > outcome.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-release-macos-${{ matrix.arch }}
+          path: release
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-maven-macos-${{ matrix.arch }}
+          path: maven-repo
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-tests-macos-${{ matrix.arch }}
+          path: outcome.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.test_args != ''
+        with:
+          name: ${{ inputs.config }}-test-results-macos-${{ matrix.arch }}
+          path: |
+            jfx/**/build/test-results/**
+            jfx/**/build/reports/tests/**

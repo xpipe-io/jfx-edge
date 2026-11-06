@@ -1,0 +1,104 @@
+name: build-linux
+
+on:
+  workflow_call:
+    inputs:
+      config: { type: string, required: true }
+      runners: { type: string, required: true }
+      boot_jdk_distribution: { type: string, required: true }
+      boot_jdk_version: { type: string, required: true }
+      archs: { type: string, required: true }
+      gradle_props: { type: string, required: true }
+      test_args: { type: string, default: "" }
+      compile_webkit: { type: boolean, default: false }
+      compile_media: { type: boolean, default: false }
+
+jobs:
+  build:
+    name: Linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(inputs.archs) }}
+    runs-on: ${{ fromJSON(inputs.runners)[format('linux-{0}', matrix.arch)] }}
+    env:
+      GRADLE_PROPS: ${{ inputs.gradle_props }}
+      TEST_ARGS: ${{ inputs.test_args }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.config }}-jfx-src
+          path: jfx
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: ${{ inputs.boot_jdk_distribution }}
+          java-version: ${{ inputs.boot_jdk_version }}
+
+      # The native code is compiled in a manylinux2014 container (CentOS 7, glibc 2.17),
+      # so that the libraries also run on old distributions
+      - name: Start build container
+        run: |
+          docker run -d --name build -w /work \
+            -v "$PWD/jfx:/work" \
+            -v "$JAVA_HOME:/opt/jdk:ro" -e JAVA_HOME=/opt/jdk \
+            quay.io/pypa/manylinux2014_${{ matrix.arch == 'aarch64' && 'aarch64' || 'x86_64' }} \
+            sleep infinity
+          docker exec build yum install -y mesa-libGL-devel libX11-devel libXxf86vm-devel pkgconfig gtk3-devel libXtst-devel
+
+      - name: Install media dependencies
+        if: inputs.compile_media
+        run: docker exec build yum install -y alsa-lib-devel
+
+      - name: Install WebKit dependencies
+        if: inputs.compile_webkit
+        run: docker exec build yum install -y bison flex gperf perl perl-JSON-PP python3 rh-ruby30-ruby
+
+      - name: Build
+        run: |
+          docker exec -e GRADLE_PROPS build bash -ec '
+            for enable in /opt/rh/*/enable; do source "$enable"; done
+            export PATH="$JAVA_HOME/bin:$PATH"
+            bash gradlew --info -PCONF=Release -PMAVEN_PUBLISH=true $GRADLE_PROPS -Dmaven.repo.local=/work/maven-repo all jmods publishToMavenLocal
+          '
+
+      - name: Test
+        id: tests
+        if: inputs.test_args != ''
+        continue-on-error: true
+        run: |
+          docker exec -e GRADLE_PROPS -e TEST_ARGS build bash -ec '
+            for enable in /opt/rh/*/enable; do source "$enable"; done
+            export PATH="$JAVA_HOME/bin:$PATH"
+            bash gradlew --info --continue -PCONF=Release -PTEST_ONLY=true $GRADLE_PROPS $TEST_ARGS
+          '
+
+      - name: Package
+        run: java scripts/Package.java linux-${{ matrix.arch }}
+
+      - run: echo "${{ steps.tests.outcome }}" > outcome.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-release-linux-${{ matrix.arch }}
+          path: release
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-maven-linux-${{ matrix.arch }}
+          path: maven-repo
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.config }}-tests-linux-${{ matrix.arch }}
+          path: outcome.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.test_args != ''
+        with:
+          name: ${{ inputs.config }}-test-results-linux-${{ matrix.arch }}
+          path: |
+            jfx/**/build/test-results/**
+            jfx/**/build/reports/tests/**
