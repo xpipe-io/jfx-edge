@@ -1,11 +1,11 @@
-# nightly
+# edge
 
-The latest development state of JavaFX with selected pull requests merged into it.
+The latest early access build of JavaFX, including several large open PRs merged into it.
 
 The configuration is a:
 
 <!-- TYPE-START -->
-snapshot
+release
 <!-- TYPE-END -->
 
 The build is based on:
@@ -17,14 +17,22 @@ The build is based on:
 The following PRs and commits are currently merged into this build:
 
 <!-- MERGE-LIST-START -->
-- https://github.com/openjdk/jfx/pull/2329
+https://github.com/openjdk/jfx/pull/2359
+https://github.com/openjdk/jfx/pull/2346
+https://github.com/openjdk/jfx/pull/2343
+https://github.com/openjdk/jfx/pull/2337
+https://github.com/openjdk/jfx/pull/2296
+https://github.com/openjdk/jfx/pull/2284
+https://github.com/openjdk/jfx/pull/2241
+https://github.com/openjdk/jfx/pull/2139
+https://github.com/openjdk/jfx/pull/2048
 <!-- MERGE-LIST-END -->
 
 The artifacts are built with the following additional properties:
 
 <!-- BUILD-PROPS-START -->
-- COMPILE_MEDIA=false
-- COMPILE_WEBKIT=false
+- COMPILE_MEDIA=true
+- COMPILE_WEBKIT=true
 <!-- BUILD-PROPS-END -->
 
 The following platforms are built:
@@ -44,7 +52,7 @@ The following boot JDK is used for the build:
 - version=26.0.2
 <!-- BOOT-JDK-END -->
 
-The following runners are used for the build:
+The builds run on the following GitHub Actions runners:
 
 <!-- RUNNERS-START -->
 - default=ubuntu-26.04
@@ -58,11 +66,8 @@ The following runners are used for the build:
 The following tests are run:
 
 <!-- TESTS-START -->
-skip
+smoke
 <!-- TESTS-END -->
 
-The Maven artifacts are published to:
-
 <!-- MAVEN-REPOSITORY-START -->
-https://maven.pkg.github.com/xpipe-io/jfx-openbuild
 <!-- MAVEN-REPOSITORY-END -->
