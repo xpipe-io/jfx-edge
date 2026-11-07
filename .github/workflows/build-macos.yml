@@ -60,6 +60,8 @@ jobs:
         id: tests
         if: inputs.test_args != ''
         continue-on-error: true
+        # A hanging test would otherwise run into the job timeout of 6 hours, which fails the whole build
+        timeout-minutes: 90
         working-directory: jfx
         run: bash gradlew --info --continue -PCONF=Release -PTEST_ONLY=true $GRADLE_PROPS $TEST_ARGS
 

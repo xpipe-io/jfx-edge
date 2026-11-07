@@ -46,10 +46,6 @@ The following runners are used for the build:
 <!-- RUNNERS-START -->
 - default=ubuntu-26.04
 - linux-x64=ubuntu-26.04
-- linux-aarch64=ubuntu-26.04-arm
-- macos-x64=macos-26-intel
-- macos-aarch64=macos-26
-- windows-x64=windows-2025
 <!-- RUNNERS-END -->
 
 The following tests are run:

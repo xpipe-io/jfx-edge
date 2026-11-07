@@ -86,6 +86,8 @@ jobs:
         id: tests
         if: inputs.test_args != ''
         continue-on-error: true
+        # A hanging test would otherwise run into the job timeout of 6 hours, which fails the whole build
+        timeout-minutes: 90
         working-directory: jfx
         run: |
           $p = $env:Path; Remove-Item Env:Path; $env:PATH = $p

@@ -124,6 +124,8 @@ The tests that are run after the build on every platform are configured between 
 
 The web tests only run if `COMPILE_WEBKIT=true`.
 
+Note that the full tests tend to freeze in some runners as they are sensitive to the GUI/display configuration of the systems.
+
 ### Boot JDK
 
 The JDK used to build JavaFX is configured between the `BOOT-JDK-START` / `BOOT-JDK-END` markers,
