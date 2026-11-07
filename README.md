@@ -18,10 +18,11 @@ And the official Windows DLLs are not signed at all in the Oracle and Gluon buil
 
 You can easily create your custom JavaFX production builds with this repository:
 
-1. Fork this repository + enable GH actions
-2. Create a build config file in [/configs](/configs). You can use the [samples](/configs_sample) as a reference. You can also create multiple configs for multiple builds
-3. Customize your builds, see below for the configuration reference
-4. Once you created a config, your release should be created after the workflows are done (this might take a while depending on your configuration)
+1. Fork this repository
+2. Enable GH actions workflows for the repository (if you want the scheduled cron job as well, explicitly enable the `jfx-openbuild-schedule` workflow as this is disabled by default)
+3. Create a build config file in [/configs](/configs). You can use the [samples](/configs_sample) as a reference. You can also create multiple configs for multiple builds
+4. Customize your builds, see below for the configuration reference
+5. Once you created a config, your release should be created after the workflows are done (this might take a while depending on your configuration)
 
 ## Build workflow
 
@@ -34,7 +35,9 @@ This repository does not contain JavaFX source itself. For every configuration, 
 4. Runs the headless test suite (if enabled) and includes the result in the release description. (A failing test does not cancel the build)
 5. Publishes the per-platform artifacts as a new [GitHub release](../../releases), see [Artifacts](#artifacts)
 
-The workflow runs on a daily schedule as a cron job, on every push to `master`, and when started manually.
+The workflow runs on every push to `master`, when started manually, and on a daily schedule as a cron job.
+The schedule is a separate workflow, `jfx-openbuild-schedule`, as forks disable scheduled workflows by default.
+To build daily in a fork, enable it in the Actions tab.
 Before doing any work it resolves
 the current commit of the base and the current head of every entry
 in the merge list, together with the build properties, and compares that against the state

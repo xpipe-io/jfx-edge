@@ -1,0 +1,18 @@
+name: jfx-openbuild-schedule
+
+# Separate from jfx-openbuild.yml, as forks disable workflows with a schedule until they are enabled manually
+on:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    name: Daily build
+    permissions:
+      contents: read
+      actions: write
+    # A called workflow sees the event of the caller, so the scheduled run does not force rebuilds like a manual run
+    uses: ./.github/workflows/jfx-openbuild.yml
